@@ -1,0 +1,10 @@
+{
+  "buildCommand": "cd fitdata-visualizer && npm install && npm run build",
+  "outputDirectory": "fitdata-visualizer/build",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

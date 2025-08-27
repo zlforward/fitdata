@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitData 可视化工具 - 离线使用指南</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        .step {
+            background: #ecf0f1;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #27ae60;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .code {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Consolas', monospace;
+            margin: 10px 0;
+        }
+        .btn {
+            display: inline-block;
+            background: #3498db;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        .btn:hover {
+            background: #2980b9;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 FitData 可视化工具 - 离线使用指南</h1>
+        
+        <div class="success">
+            <strong>✅ 恭喜！</strong> 您已成功获得完整的本地部署包，可以完全离线使用此工具。
+        </div>
+
+        <h2>📋 快速启动步骤</h2>
+        
+        <div class="step">
+            <strong>步骤 1:</strong> 确保已安装 Node.js
+            <ul>
+                <li>如未安装，请访问 <a href="https://nodejs.org/" target="_blank">https://nodejs.org/</a> 下载安装</li>
+                <li>验证安装：打开命令行输入 <code>node --version</code></li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>步骤 2:</strong> 选择启动方式
+            <ul>
+                <li><strong>Windows 用户:</strong> 双击 <code>start-local.bat</code> 文件</li>
+                <li><strong>PowerShell 用户:</strong> 右键选择"用PowerShell运行" <code>start-local.ps1</code></li>
+                <li><strong>手动启动:</strong> 在 fitdata-visualizer 目录下运行 <code>npm start</code></li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>步骤 3:</strong> 等待自动启动
+            <ul>
+                <li>首次运行会自动安装依赖（需要联网）</li>
+                <li>后续使用完全离线</li>
+                <li>浏览器将自动打开 http://localhost:3000</li>
+            </ul>
+        </div>
+
+        <h2>🎯 主要功能</h2>
+        <ul>
+            <li><strong>数据导入:</strong> 支持 Excel (.xlsx) 和 CSV 文件</li>
+            <li><strong>可视化:</strong> 交互式热力图显示</li>
+            <li><strong>预测分析:</strong> 多种数学拟合算法</li>
+            <li><strong>实时交互:</strong> 双击查看详细预测结果</li>
+        </ul>
+
+        <h2>📊 使用方法</h2>
+        <ol>
+            <li>启动应用后，点击"选择文件"按钮</li>
+            <li>选择您的数据文件（支持 .xlsx 或 .csv 格式）</li>
+            <li>等待数据加载和可视化生成</li>
+            <li>双击热力图中的任意数据点查看预测结果</li>
+            <li>查看包含多种算法的详细拟合分析</li>
+        </ol>
+
+        <div class="warning">
+            <strong>⚠️ 重要提醒:</strong>
+            <ul>
+                <li>首次运行需要联网下载依赖包</li>
+                <li>依赖安装完成后可完全离线使用</li>
+                <li>建议使用 Chrome、Firefox 或 Edge 浏览器</li>
+            </ul>
+        </div>
+
+        <h2>🔧 故障排除</h2>
+        
+        <div class="step">
+            <strong>问题:</strong> 双击启动脚本没有反应
+            <br><strong>解决:</strong> 检查 Node.js 是否正确安装，运行 <code>node --version</code> 验证
+        </div>
+
+        <div class="step">
+            <strong>问题:</strong> 提示"npm 不是内部或外部命令"
+            <br><strong>解决:</strong> 重新安装 Node.js，确保添加到系统 PATH
+        </div>
+
+        <div class="step">
+            <strong>问题:</strong> 端口 3000 被占用
+            <br><strong>解决:</strong> 关闭其他占用 3000 端口的程序，或重启计算机
+        </div>
+
+        <h2>📁 文件说明</h2>
+        <ul>
+            <li><code>start-local.bat</code> - Windows 批处理启动脚本</li>
+            <li><code>start-local.ps1</code> - PowerShell 启动脚本</li>
+            <li><code>本地启动说明.md</code> - 详细文档说明</li>
+            <li><code>离线使用指南.html</code> - 本文件</li>
+            <li><code>fitdata-visualizer/</code> - 主程序目录</li>
+            <li><code>*.csv</code> - 示例数据文件</li>
+        </ul>
+
+        <div class="success">
+            <strong>🎉 享受使用!</strong> 现在您可以完全离线使用 FitData 可视化工具进行数据分析和预测了。
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; color: #7f8c8d;">
+            <small>FitData 可视化工具 | 本地离线版本</small>
+        </div>
+    </div>
+</body>
+</html>
