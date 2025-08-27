@@ -142,7 +142,120 @@ const App: React.FC = () => {
         )}
 
         {!parsedData ? (
-          <FileUpload onFileSelect={handleFileSelect} isLoading={isLoading} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* 文件上传区域 */}
+            <div className="order-2 lg:order-1">
+              <FileUpload onFileSelect={handleFileSelect} isLoading={isLoading} />
+            </div>
+            
+            {/* 使用说明区域 */}
+            <div className="order-1 lg:order-2">
+              <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 h-full">
+                <div className="flex items-center mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mr-4">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    使用说明
+                  </h2>
+                </div>
+                
+                <div className="space-y-6">
+                  {/* 支持的文件格式 */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                      <span className="w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-sm font-bold mr-2">1</span>
+                      支持的文件格式
+                    </h3>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex flex-wrap gap-2">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          .xlsx
+                        </span>
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          .xls
+                        </span>
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          .csv
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 数据格式要求 */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                      <span className="w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-sm font-bold mr-2">2</span>
+                      数据格式要求
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded-r-lg">
+                        <p className="text-sm text-blue-800">
+                          <span className="font-semibold">灰阶数据：</span>包含位置信息(X,Y坐标)和对应的灰度值
+                        </p>
+                      </div>
+                      <div className="bg-purple-50 border-l-4 border-purple-400 p-3 rounded-r-lg">
+                        <p className="text-sm text-purple-800">
+                          <span className="font-semibold">亮度数据块：</span>按区域分组的亮度矩阵数据
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 功能特性 */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                      <span className="w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-sm font-bold mr-2">3</span>
+                      主要功能
+                    </h3>
+                    <div className="grid grid-cols-1 gap-2">
+                      <div className="flex items-center p-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+                        <svg className="w-4 h-4 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-sm text-gray-700">数据可视化分析</span>
+                      </div>
+                      <div className="flex items-center p-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
+                        <svg className="w-4 h-4 text-purple-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-sm text-gray-700">目标数据预测</span>
+                      </div>
+                      <div className="flex items-center p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg">
+                        <svg className="w-4 h-4 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-sm text-gray-700">交互式热力图</span>
+                      </div>
+                      <div className="flex items-center p-2 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg">
+                        <svg className="w-4 h-4 text-orange-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-sm text-gray-700">数据导出功能</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 操作提示 */}
+                  <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                      <svg className="w-5 h-5 text-amber-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <div>
+                        <h4 className="text-sm font-semibold text-amber-800 mb-1">操作提示</h4>
+                        <p className="text-xs text-amber-700 leading-relaxed">
+                          点击或拖拽文件到左侧上传区域，系统将自动解析并展示数据可视化结果。支持多种图表类型和交互功能。
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="space-y-6">
             {/* 主标签页导航 */}
