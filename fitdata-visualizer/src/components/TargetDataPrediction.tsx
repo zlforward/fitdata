@@ -272,32 +272,65 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
         
         <div className="space-y-2">
           <h6 className="text-sm font-medium text-gray-700">所有拟合方法预测结果:</h6>
-          {predictions.map(([method, prediction]) => {
-            const pred = prediction as {
-              predictedGrayScale: number;
-              formula: string;
-              confidence: number;
-              fittingType: string;
-            };
-            return (
-              <div key={method} className="bg-blue-50 p-2 rounded-lg border border-blue-200">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-medium text-gray-700">
-                    {getTypeLabel(method)}
-                  </span>
-                  <span className="text-sm font-bold text-blue-600">
-                    {pred.predictedGrayScale.toFixed(6)}
-                  </span>
+          {(() => {
+            // 找出置信度最高的拟合方法
+            let bestMethod = '';
+            let bestConfidence = -1;
+            predictions.forEach(([method, prediction]) => {
+              const pred = prediction as {
+                predictedGrayScale: number;
+                formula: string;
+                confidence: number;
+                fittingType: string;
+              };
+              if (pred.confidence > bestConfidence) {
+                bestConfidence = pred.confidence;
+                bestMethod = method;
+              }
+            });
+            
+            return predictions.map(([method, prediction]) => {
+              const pred = prediction as {
+                predictedGrayScale: number;
+                formula: string;
+                confidence: number;
+                fittingType: string;
+              };
+              const isBest = method === bestMethod;
+              
+              return (
+                <div 
+                  key={method} 
+                  className={`p-2 rounded-lg border ${
+                    isBest 
+                      ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-300 shadow-md' 
+                      : 'bg-blue-50 border-blue-200'
+                  }`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className={`text-xs font-medium ${
+                      isBest ? 'text-green-700' : 'text-gray-700'
+                    }`}>
+                      {isBest && '⭐ '}{getTypeLabel(method)}{isBest && ' (最优)'}
+                    </span>
+                    <span className={`text-sm font-bold ${
+                      isBest ? 'text-green-600' : 'text-blue-600'
+                    }`}>
+                      {pred.predictedGrayScale.toFixed(6)}
+                    </span>
+                  </div>
+                  <div className={`text-xs mb-1 ${
+                    isBest ? 'text-green-600' : 'text-gray-600'
+                  }`}>
+                    置信度(R²): <span className="font-medium">{(pred.confidence * 100).toFixed(2)}%</span>
+                  </div>
+                  <div className="text-xs text-gray-500 font-mono bg-white p-1 rounded border">
+                    {pred.formula}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-600 mb-1">
-                  置信度(R²): <span className="font-medium">{(pred.confidence * 100).toFixed(2)}%</span>
-                </div>
-                <div className="text-xs text-gray-500 font-mono bg-white p-1 rounded border">
-                  {pred.formula}
-                </div>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
       </div>
     );
@@ -328,7 +361,7 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
       setGenerationProgress(10);
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // 提取中心像素值和灰阶值
+      // 提取中心像素值和灰阶值作为训练数据
       const centerPixelValues = currentBrightnessBlocks.map(block => block.centerPixelValue);
       const grayScaleValues = currentGrayScaleData.values;
 
@@ -337,56 +370,94 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
         return;
       }
 
-      // 步骤2: 执行拟合算法 (30%)
+      // 步骤2: 为每个位置计算独立的拟合结果 (30% - 80%)
       setGenerationProgress(30);
       await new Promise(resolve => setTimeout(resolve, 200));
-
-      const allFittingResults = performAllFittings({
-        x: centerPixelValues,
-        y: grayScaleValues
-      });
-
-      // 拟合结果已获取，继续处理预测
-
-      // 步骤3: 找到最佳拟合结果 (50%)
-      setGenerationProgress(50);
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const bestFitting = allFittingResults.reduce((best, current) => {
-        if (isNaN(current.rSquared) || current.rSquared < 0) return best;
-        if (!best || current.rSquared > best.rSquared) return current;
-        return best;
-      }, null as FittingResult | null);
-
-      if (!bestFitting) {
-        setError('无法获取有效的拟合结果');
-        return;
-      }
-
-      setBestFittingResult(bestFitting);
-
-      // 步骤4: 计算预测结果 (80%)
-      setGenerationProgress(80);
-      await new Promise(resolve => setTimeout(resolve, 300));
 
       const totalValues = rawData.values.length;
       const predictions: PredictionResult[] = [];
       const predictionCache: CachedPredictionResult[] = [];
+      let globalBestFitting: FittingResult | null = null;
+      let globalBestRSquared = -1;
 
+      // 为每个位置计算独立的拟合公式和预测结果
       for (let index = 0; index < totalValues; index++) {
         const rawValue = rawData.values[index];
-        // 计算对应的亮度值
-        let brightnessValue = rawValue; // 使用原始数据值作为亮度值
+        const brightnessValue = rawValue; // 使用原始数据值作为亮度值
+        const position = rawData.positions[index];
 
-        // 为每种拟合方法计算预测值
+        // 解析位置信息（如A2, B3等）
+        const colMatch = position.match(/^([A-Z]+)/);
+        const rowMatch = position.match(/([0-9]+)$/);
+        
+        if (!colMatch || !rowMatch) {
+          console.warn(`无法解析位置: ${position}`);
+          continue;
+        }
+
+        // 将列字母转换为数字索引
+        const colToNum = (col: string): number => {
+          let result = 0;
+          for (let i = 0; i < col.length; i++) {
+            result = result * 26 + (col.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
+          }
+          return result - 1; // 转换为0基索引
+        };
+
+        const colIndex = colToNum(colMatch[1]);
+        const rowIndex = parseInt(rowMatch[1]) - 2; // 减2是因为数据从第2行开始，转换为0基索引
+
+        // 为当前位置收集对应的训练数据
+        const positionTrainingX: number[] = [];
+        const positionTrainingY: number[] = [];
+
+        // 从每个亮度块中提取当前位置的数据
+        currentBrightnessBlocks.forEach((block, blockIndex) => {
+          if (blockIndex < grayScaleValues.length && 
+              rowIndex >= 0 && rowIndex < block.data.length &&
+              colIndex >= 0 && colIndex < block.data[rowIndex].length) {
+            const positionValue = block.data[rowIndex][colIndex];
+            positionTrainingX.push(positionValue);
+            positionTrainingY.push(grayScaleValues[blockIndex]);
+          }
+        });
+
+        // 确保有足够的训练数据
+        if (positionTrainingX.length < 3) {
+          console.warn(`位置 ${position} 的训练数据不足: ${positionTrainingX.length} 个数据点`);
+          // 使用全局训练数据作为后备
+          positionTrainingX.push(...centerPixelValues);
+          positionTrainingY.push(...grayScaleValues);
+        }
+
+        // 为当前位置执行独立的拟合计算
+        const positionFittingResults = performAllFittings({
+          x: positionTrainingX,
+          y: positionTrainingY
+        });
+
+        // 找到当前位置的最佳拟合结果
+        const positionBestFitting = positionFittingResults.reduce((best, current) => {
+          if (isNaN(current.rSquared) || current.rSquared < 0) return best;
+          if (!best || current.rSquared > best.rSquared) return current;
+          return best;
+        }, null as FittingResult | null);
+
+        // 更新全局最佳拟合结果
+        if (positionBestFitting && positionBestFitting.rSquared > globalBestRSquared) {
+          globalBestFitting = positionBestFitting;
+          globalBestRSquared = positionBestFitting.rSquared;
+        }
+
+        // 使用当前位置的拟合结果计算预测值
         const methodPredictions: { [key: string]: { predictedGrayScale: number; formula: string; confidence: number; fittingType: string } } = {};
         
-        allFittingResults.forEach(fitting => {
+        positionFittingResults.forEach(fitting => {
           if (isNaN(fitting.rSquared) || fitting.rSquared < 0) return;
           
           let predictedGrayScale = 0;
           
-          // 根据拟合类型计算预测值
+          // 根据拟合类型和该位置的拟合系数计算预测值
           switch (fitting.type) {
             case 'logarithmic':
               if (rawValue > 0) {
@@ -437,20 +508,31 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
           methodPredictions
         });
 
-        // 更新进度 (80% - 95%)
-        const progress = 80 + Math.floor((index / totalValues) * 15);
+        // 更新进度 (30% - 80%)
+        const progress = 30 + Math.floor((index / totalValues) * 50);
         setGenerationProgress(progress);
         
-        // 每处理100个数据点暂停一下，让UI更新
-        if (index % 100 === 0) {
+        // 每处理50个数据点暂停一下，让UI更新
+        if (index % 50 === 0) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
 
+      // 步骤3: 设置全局最佳拟合结果 (90%)
+      setGenerationProgress(90);
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!globalBestFitting) {
+        setError('无法获取有效的拟合结果');
+        return;
+      }
+
+      setBestFittingResult(globalBestFitting);
+
       // 缓存预测结果
       setCachedPredictionResults(predictionCache);
 
-      // 步骤5: 完成 (100%)
+      // 步骤4: 完成 (100%)
       setGenerationProgress(100);
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -872,24 +954,60 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
                   <div className="mt-3 pt-2 border-t border-blue-200">
                     <div className="text-xs font-medium text-gray-700 mb-2">各拟合方法预测值:</div>
                     <div className="space-y-2">
-                      {Object.entries(result.predictions).map(([method, prediction]) => (
-                        <div key={method} className="bg-white rounded p-2 border">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-gray-600">
-                              {getTypeLabel(method)}
-                            </span>
-                            <span className="text-xs text-blue-600 font-medium">
-                              {prediction.predictedGrayScale.toFixed(4)}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500 mb-1">
-                            置信度: {(prediction.confidence * 100).toFixed(1)}%
-                          </div>
-                          <div className="text-xs text-gray-400 break-all font-mono">
-                            {prediction.formula}
-                          </div>
-                        </div>
-                      ))}
+                      {(() => {
+                        // 找出当前位置的最佳拟合方法（confidence最高的）
+                        const predictions = Object.entries(result.predictions);
+                        let bestMethod: string | null = null;
+                        let bestConfidence = -1;
+                        
+                        predictions.forEach(([method, prediction]) => {
+                          if (prediction.confidence > bestConfidence) {
+                            bestConfidence = prediction.confidence;
+                            bestMethod = method;
+                          }
+                        });
+                        
+                        return predictions.map(([method, prediction]) => {
+                          const isBest = bestMethod && method === bestMethod;
+                          return (
+                            <div key={method} className={`rounded p-2 border-2 transition-all ${
+                              isBest 
+                                ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-md' 
+                                : 'bg-white border-gray-200'
+                            }`}>
+                              <div className="flex justify-between items-center mb-1">
+                                <div className="flex items-center gap-2">
+                                  {isBest && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      ⭐ 最优
+                                    </span>
+                                  )}
+                                  <span className={`text-xs font-medium ${
+                                    isBest ? 'text-green-700' : 'text-gray-600'
+                                  }`}>
+                                    {getTypeLabel(method)}
+                                  </span>
+                                </div>
+                                <span className={`text-xs font-medium ${
+                                  isBest ? 'text-green-600' : 'text-blue-600'
+                                }`}>
+                                  {prediction.predictedGrayScale.toFixed(4)}
+                                </span>
+                              </div>
+                              <div className={`text-xs mb-1 ${
+                                isBest ? 'text-green-600' : 'text-gray-500'
+                              }`}>
+                                置信度: {(prediction.confidence * 100).toFixed(1)}%
+                              </div>
+                              <div className={`text-xs break-all font-mono ${
+                                isBest ? 'text-green-500' : 'text-gray-400'
+                              }`}>
+                                {prediction.formula}
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()} 
                     </div>
                   </div>
                 </div>
