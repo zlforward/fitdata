@@ -1,0 +1,8 @@
+[build]
+  command = "cd fitdata-visualizer && npm install && npm run build"
+  publish = "fitdata-visualizer/build"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
