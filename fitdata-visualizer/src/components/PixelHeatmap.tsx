@@ -359,13 +359,40 @@ const PixelHeatmap: React.FC<PixelHeatmapProps> = ({
         
         {/* 热力图 */}
         <div className="border border-gray-300 rounded-lg overflow-hidden inline-block">
-          <svg width="640" height="400" className="bg-white">
+          <svg width="700" height="480" className="bg-white">
+            {/* 列标识 (顶部) */}
+            {Array.from({ length: 32 }, (_, colIndex) => (
+              <text
+                key={`col-label-${colIndex}`}
+                x={30 + colIndex * 20 + 10}
+                y={15}
+                textAnchor="middle"
+                className="text-xs fill-gray-600 font-mono"
+              >
+                {colIndex}
+              </text>
+            ))}
+            
+            {/* 行标识 (左侧) */}
+            {Array.from({ length: 20 }, (_, rowIndex) => (
+              <text
+                key={`row-label-${rowIndex}`}
+                x={15}
+                y={30 + rowIndex * 20 + 14}
+                textAnchor="middle"
+                className="text-xs fill-gray-600 font-mono"
+              >
+                {rowIndex}
+              </text>
+            ))}
+            
+            {/* 热力图数据 */}
             {heatmapData.map((row, rowIndex) =>
               row.map((value, colIndex) => (
                 <rect
                   key={`${rowIndex}-${colIndex}`}
-                  x={colIndex * 20}
-                  y={rowIndex * 20}
+                  x={30 + colIndex * 20}
+                  y={30 + rowIndex * 20}
                   width="20"
                   height="20"
                   fill={getColor(value)}
@@ -382,11 +409,11 @@ const PixelHeatmap: React.FC<PixelHeatmapProps> = ({
             )}
             
             {/* 坐标轴标签 */}
-            <text x="320" y="390" textAnchor="middle" className="text-xs fill-gray-600">
-              列 (0-31)
+            <text x="350" y="470" textAnchor="middle" className="text-sm fill-gray-700 font-medium">
+              列索引 (0-31)
             </text>
-            <text x="10" y="200" textAnchor="middle" className="text-xs fill-gray-600" transform="rotate(-90 10 200)">
-              行 (0-19)
+            <text x="-5" y="230" textAnchor="middle" className="text-sm fill-gray-700 font-medium" transform="rotate(-90 -5 230)">
+              行索引 (0-19)
             </text>
           </svg>
         </div>
@@ -633,6 +660,44 @@ const PixelHeatmap: React.FC<PixelHeatmapProps> = ({
                   {/* 坐标轴 */}
                   <line x1="20" y1="20" x2="20" y2="380" stroke="#374151" strokeWidth="2" />
                   <line x1="20" y1="380" x2="780" y2="380" stroke="#374151" strokeWidth="2" />
+                  
+                  {/* X轴刻度和数值 */}
+                  {(() => {
+                    const xMin = Math.min(...positionFittingResult.xValues);
+                    const xMax = Math.max(...positionFittingResult.xValues);
+                    const xRange = xMax - xMin || 1;
+                    return Array.from({ length: 9 }, (_, i) => {
+                      const value = xMin + (xRange / 8) * i;
+                      const x = 20 + (i / 8) * 760;
+                      return (
+                        <g key={`x-tick-${i}`}>
+                          <line x1={x} y1="380" x2={x} y2="385" stroke="#374151" strokeWidth="1" />
+                          <text x={x} y="398" textAnchor="middle" className="text-xs fill-gray-600">
+                            {value.toFixed(2)}
+                          </text>
+                        </g>
+                      );
+                    });
+                  })()}
+                  
+                  {/* Y轴刻度和数值 */}
+                  {(() => {
+                    const yMin = Math.min(...grayScaleValues);
+                    const yMax = Math.max(...grayScaleValues);
+                    const yRange = yMax - yMin || 1;
+                    return Array.from({ length: 6 }, (_, i) => {
+                      const value = yMin + (yRange / 5) * i;
+                      const y = 380 - (i / 5) * 360;
+                      return (
+                        <g key={`y-tick-${i}`}>
+                          <line x1="15" y1={y} x2="20" y2={y} stroke="#374151" strokeWidth="1" />
+                          <text x="12" y={y + 3} textAnchor="end" className="text-xs fill-gray-600">
+                            {value.toFixed(1)}
+                          </text>
+                        </g>
+                      );
+                    });
+                  })()}
                   
                   {/* 原始数据点 */}
                   {generateScatterPoints(positionFittingResult.xValues, 800, 400).map((point, i) => (

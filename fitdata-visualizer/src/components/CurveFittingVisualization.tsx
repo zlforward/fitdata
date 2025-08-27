@@ -35,6 +35,15 @@ const CurveFittingVisualization: React.FC<CurveFittingVisualizationProps> = ({
   // 当前使用的拟合结果
   const fittingResults = centerFittingResults;
   const currentXValues = centerPixelValues;
+  
+  // 计算数据范围用于刻度显示
+  const maxBrightness = useMemo(() => {
+    return currentXValues.length > 0 ? Math.max(...currentXValues) : 100;
+  }, [currentXValues]);
+  
+  const maxGrayScale = useMemo(() => {
+    return grayScaleValues.length > 0 ? Math.max(...grayScaleValues) : 100;
+  }, [grayScaleValues]);
 
   const generateSVGPath = (result: FittingResult, width: number, height: number) => {
     if (result.predictedValues.length === 0 || currentXValues.length === 0) return '';
@@ -389,7 +398,7 @@ const CurveFittingVisualization: React.FC<CurveFittingVisualizationProps> = ({
       <div className="mb-4">
         <h4 className="font-medium mb-3">拟合曲线图</h4>
         <div className="bg-gray-50 p-4 rounded-lg">
-          <svg width="100%" height="400" viewBox="0 0 800 400" className="border border-gray-200 bg-white">
+          <svg width="100%" height="450" viewBox="0 0 800 450" className="border border-gray-200 bg-white">
             {/* 网格线 */}
             <defs>
               <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -401,6 +410,34 @@ const CurveFittingVisualization: React.FC<CurveFittingVisualizationProps> = ({
             {/* 坐标轴 */}
             <line x1="20" y1="20" x2="20" y2="380" stroke="#374151" strokeWidth="2" />
             <line x1="20" y1="380" x2="780" y2="380" stroke="#374151" strokeWidth="2" />
+            
+            {/* X轴刻度和数值 */}
+            {Array.from({ length: 9 }, (_, i) => {
+              const x = 20 + (i * (760 / 8));
+              const value = (i * (maxBrightness / 8)).toFixed(1);
+              return (
+                <g key={`x-tick-${i}`}>
+                  <line x1={x} y1="380" x2={x} y2="385" stroke="#374151" strokeWidth="1" />
+                  <text x={x} y="400" textAnchor="middle" className="text-xs fill-gray-600">
+                    {value}
+                  </text>
+                </g>
+              );
+            })}
+            
+            {/* Y轴刻度和数值 */}
+            {Array.from({ length: 9 }, (_, i) => {
+              const y = 380 - (i * (360 / 8));
+              const value = (i * (maxGrayScale / 8)).toFixed(1);
+              return (
+                <g key={`y-tick-${i}`}>
+                  <line x1="15" y1={y} x2="20" y2={y} stroke="#374151" strokeWidth="1" />
+                  <text x="10" y={y + 3} textAnchor="end" className="text-xs fill-gray-600">
+                    {value}
+                  </text>
+                </g>
+              );
+            })}
             
             {/* 原始数据点 */}
             {generateScatterPoints(800, 400).map((point, i) => (
@@ -446,10 +483,10 @@ const CurveFittingVisualization: React.FC<CurveFittingVisualizationProps> = ({
             })}
             
             {/* 坐标轴标签 */}
-            <text x="400" y="395" textAnchor="middle" className="text-sm fill-gray-600">
+            <text x="400" y="440" textAnchor="middle" className="text-sm fill-gray-600">
               中心像素值
             </text>
-            <text x="10" y="200" textAnchor="middle" className="text-sm fill-gray-600" transform="rotate(-90 10 200)">
+            <text x="-15" y="200" textAnchor="middle" className="text-sm fill-gray-600" transform="rotate(-90 -15 200)">
               灰阶值
             </text>
           </svg>

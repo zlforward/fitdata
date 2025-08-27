@@ -1,11 +1,24 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { FittingResult, performAllFittings } from '../utils/curveFitting';
+import { parseExcelData } from '../utils/dataParser';
 
 interface RawData {
   values: number[];
   positions: string[];
   matrix: number[][];
+}
+
+interface CachedPredictionResult {
+  rawValue: number;
+  methodPredictions: {
+    [key: string]: {
+      predictedGrayScale: number;
+      formula: string;
+      confidence: number;
+      fittingType: string;
+    }
+  };
 }
 
 interface PredictionResult {
@@ -42,10 +55,27 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
   const [bestFittingResult, setBestFittingResult] = useState<FittingResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // 本地状态用于存储从文件解析的数据
+  const [localGrayScaleData, setLocalGrayScaleData] = useState<{ values: number[]; positions: string[]; } | null>(null);
+  const [localBrightnessBlocks, setLocalBrightnessBlocks] = useState<Array<{ label: string; startRow: number; endRow: number; data: number[][]; centerPixelValue: number; normalizedData?: number[][]; }> | null>(null);
 
   const [doubleClickedCell, setDoubleClickedCell] = useState<{ row: number; col: number } | null>(null);
   const [generationProgress, setGenerationProgress] = useState<number>(0);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [cachedPredictionResults, setCachedPredictionResults] = useState<CachedPredictionResult[] | null>(null);
+
+  // 获取拟合类型标签
+  const getTypeLabel = (type: string) => {
+    const labels: { [key: string]: string } = {
+      'logarithmic': '对数拟合',
+      'exponential': '指数拟合',
+      'polynomial': '三次多项式拟合',
+      'power': '幂函数拟合',
+      'bivariate': '二次多项式拟合'
+    };
+    return labels[type] || type;
+  };
 
   // 将数字转换为Excel列名
   const numToCol = (num: number): string => {
@@ -59,221 +89,219 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
   };
 
   // 读取Excel Sheet3数据
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setIsLoading(true);
     setError(null);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        // 检查是否有Sheet3
-        if (!workbook.SheetNames.includes('Sheet3')) {
-          throw new Error('未找到Sheet3工作表');
+    try {
+      // 清除缓存的预测结果
+      setCachedPredictionResults(null);
+      
+      // 使用parseExcelData解析完整数据
+      const parsedData = await parseExcelData(file);
+      
+      // 更新本地的grayScaleData和brightnessBlocks
+      setLocalGrayScaleData(parsedData.grayScale);
+      setLocalBrightnessBlocks(parsedData.brightnessBlocks);
+      
+      // 设置原始数据（从Sheet3读取）
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(data), { type: 'array' });
+      
+      // 检查是否有Sheet3
+      if (!workbook.SheetNames.includes('Sheet3')) {
+        throw new Error('未找到Sheet3工作表');
+      }
+      
+      const worksheet = workbook.Sheets['Sheet3'];
+      const values: number[] = [];
+      const positions: string[] = [];
+      
+      // 读取A2-AF21范围的原始数据（20行×32列）
+      const startRow = 2;
+      const endRow = 21;
+      const startCol = 'A';
+      const endCol = 'AF';
+      
+      // 将列字母转换为数字
+      const colToNum = (col: string): number => {
+        let result = 0;
+        for (let i = 0; i < col.length; i++) {
+          result = result * 26 + (col.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
         }
-        
-        const worksheet = workbook.Sheets['Sheet3'];
-        const values: number[] = [];
-        const positions: string[] = [];
-        
-        // 读取A2-AF21范围的原始数据（20行×32列）
-        const startRow = 2;
-        const endRow = 21;
-        const startCol = 'A';
-        const endCol = 'AF';
-        
-        // 将列字母转换为数字
-        const colToNum = (col: string): number => {
-          let result = 0;
-          for (let i = 0; i < col.length; i++) {
-            result = result * 26 + (col.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
-          }
-          return result;
-        };
-        
-        const numToCol = (num: number): string => {
-          let result = '';
-          while (num > 0) {
-            num--;
-            result = String.fromCharCode('A'.charCodeAt(0) + (num % 26)) + result;
-            num = Math.floor(num / 26);
-          }
-          return result;
-        };
-        
-        const startColNum = colToNum(startCol);
-        const endColNum = colToNum(endCol);
-        
-        // 创建矩阵结构
-        const matrix: number[][] = [];
-        
-        // 按行读取数据
-        for (let row = startRow; row <= endRow; row++) {
-          const rowData: number[] = [];
-          for (let colNum = startColNum; colNum <= endColNum; colNum++) {
-            const col = numToCol(colNum);
-            const cellAddress = `${col}${row}`;
-            const cell = worksheet[cellAddress];
-            
-            if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
-              const value = typeof cell.v === 'number' ? cell.v : parseFloat(cell.v.toString());
-              if (!isNaN(value)) {
-                values.push(value);
-                positions.push(cellAddress);
-                rowData.push(value);
-              } else {
-                rowData.push(0);
-              }
+        return result;
+      };
+      
+      const numToCol = (num: number): string => {
+        let result = '';
+        while (num > 0) {
+          num--;
+          result = String.fromCharCode('A'.charCodeAt(0) + (num % 26)) + result;
+          num = Math.floor(num / 26);
+        }
+        return result;
+      };
+      
+      const startColNum = colToNum(startCol);
+      const endColNum = colToNum(endCol);
+      
+      // 创建矩阵结构
+      const matrix: number[][] = [];
+      
+      // 按行读取数据
+      for (let row = startRow; row <= endRow; row++) {
+        const rowData: number[] = [];
+        for (let colNum = startColNum; colNum <= endColNum; colNum++) {
+          const col = numToCol(colNum);
+          const cellAddress = `${col}${row}`;
+          const cell = worksheet[cellAddress];
+          
+          if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
+            const value = typeof cell.v === 'number' ? cell.v : parseFloat(cell.v.toString());
+            if (!isNaN(value)) {
+              values.push(value);
+              positions.push(cellAddress);
+              rowData.push(value);
             } else {
               rowData.push(0);
             }
+          } else {
+            rowData.push(0);
           }
-          matrix.push(rowData);
         }
-        
-        if (values.length === 0) {
-          throw new Error('Sheet3中未找到有效的原始数据');
-        }
-        
-        setRawData({ values, positions, matrix });
-        
-        // 自动生成预测结果
-      setTimeout(async () => {
-         await generatePredictions();
-       }, 500);
-      } catch (error) {
-        setError(error instanceof Error ? error.message : '文件读取失败');
-      } finally {
-        setIsLoading(false);
+        matrix.push(rowData);
       }
-    };
-    
-    reader.onerror = () => {
-      setError('文件读取失败');
+      
+      if (values.length === 0) {
+        throw new Error('Sheet3中未找到有效的原始数据');
+      }
+      
+      setRawData({ values, positions, matrix });
+      
+      // 自动生成预测结果（延迟确保状态更新完成）
+      setTimeout(async () => {
+        await generatePredictions();
+      }, 100);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '文件读取失败');
+    } finally {
       setIsLoading(false);
-    };
-    
-    reader.readAsArrayBuffer(file);
+    }
   }, []);
 
 
 
-  // 处理双击事件
-  const handleDoubleClick = (rowIndex: number, colIndex: number) => {
-    setDoubleClickedCell({ row: rowIndex, col: colIndex });
+  // 获取颜色值
+  const getColor = (value: number) => {
+    if (!rawData || !rawData.matrix || rawData.matrix.length === 0) {
+      return 'rgb(255, 255, 255)';
+    }
+    
+    const minValue = Math.min(...rawData.matrix.flat());
+    const maxValue = Math.max(...rawData.matrix.flat());
+    
+    if (maxValue === minValue) return 'rgb(255, 255, 255)';
+    
+    const normalized = (value - minValue) / (maxValue - minValue);
+    const intensity = Math.floor(normalized * 255);
+    
+    // 使用蓝色到红色的渐变
+    const red = intensity;
+    const blue = 255 - intensity;
+    const green = Math.floor(128 * (1 - Math.abs(normalized - 0.5) * 2));
+    
+    return `rgb(${red}, ${green}, ${blue})`;
   };
 
+  // 处理双击事件
+  const handleDoubleClick = useCallback((rowIndex: number, colIndex: number) => {
+    // 如果没有缓存的预测结果，提示用户先生成预测数据
+    if (!cachedPredictionResults) {
+      setError('请先生成预测数据后再查看详细结果');
+      return;
+    }
+    setDoubleClickedCell({ row: rowIndex, col: colIndex });
+  }, [cachedPredictionResults]);
+
   // 关闭双击卡片
-  const handleCloseDoubleClickCard = () => {
+  const handleCloseDoubleClickCard = useCallback(() => {
     setDoubleClickedCell(null);
-  };
+  }, []);
 
   // 计算双击卡片的预测结果
   const doubleClickPredictionContent = useMemo(() => {
-    if (!rawData || !grayScaleData.values.length || !brightnessBlocks.length || !doubleClickedCell) {
+    // 使用本地数据（如果有）或传入的props数据
+    const currentGrayScaleData = localGrayScaleData || grayScaleData;
+    const currentBrightnessBlocks = localBrightnessBlocks || brightnessBlocks;
+    
+    if (!rawData || !currentGrayScaleData.values.length || !currentBrightnessBlocks.length || !doubleClickedCell) {
       return <p className="text-gray-500">预测数据尚未生成，请等待数据处理完成</p>;
     }
     
-    // 计算该位置的预测结果
+    // 使用缓存的预测结果，如果没有缓存则返回提示
+    if (!cachedPredictionResults) {
+      return <p className="text-gray-500">请先生成预测数据</p>;
+    }
+    
+    // 直接从缓存中读取该位置的预测结果
     const cellIndex = doubleClickedCell.row * 32 + doubleClickedCell.col;
-    const rawValue = rawData.values[cellIndex];
+    const cachedResult = cachedPredictionResults[cellIndex];
     
-    const centerPixelValues = brightnessBlocks.map(block => block.centerPixelValue);
-    const grayScaleValues = grayScaleData.values;
+    if (!cachedResult) {
+      return <p className="text-gray-500">该位置暂无有效拟合结果</p>;
+    }
     
-    const allFittingResults = performAllFittings({
-      x: centerPixelValues,
-      y: grayScaleValues
-    });
-    
-    const methodPredictions: { [key: string]: { predictedGrayScale: number; formula: string; confidence: number; fittingType: string } } = {};
-    
-    allFittingResults.forEach(fitting => {
-      if (isNaN(fitting.rSquared) || fitting.rSquared < 0) return;
-      
-      let predictedGrayScale = 0;
-      
-      switch (fitting.type) {
-        case 'logarithmic':
-          if (rawValue > 0) {
-            const [a, b] = fitting.coefficients;
-            predictedGrayScale = a * Math.log(rawValue) + b;
-          }
-          break;
-        case 'exponential':
-          const [a_exp, b_exp] = fitting.coefficients;
-          predictedGrayScale = a_exp * Math.exp(b_exp * rawValue);
-          break;
-        case 'polynomial':
-          const [a_poly, b_poly, c_poly, d_poly] = fitting.coefficients;
-          predictedGrayScale = a_poly * Math.pow(rawValue, 3) + 
-                              b_poly * Math.pow(rawValue, 2) + 
-                              c_poly * rawValue + d_poly;
-          break;
-        case 'power':
-          if (rawValue > 0) {
-            const [a_pow, b_pow] = fitting.coefficients;
-            predictedGrayScale = a_pow * Math.pow(rawValue, b_pow);
-          }
-          break;
-        case 'bivariate':
-          const [a_biv, b_biv, c_biv] = fitting.coefficients;
-          predictedGrayScale = a_biv * Math.pow(rawValue, 2) + 
-                              b_biv * rawValue + c_biv;
-          break;
-      }
-      
-      methodPredictions[fitting.type] = {
-        predictedGrayScale,
-        formula: fitting.formula,
-        confidence: fitting.rSquared,
-        fittingType: fitting.type
-      };
-    });
-    
+    const { rawValue, methodPredictions } = cachedResult;
     const predictions = Object.entries(methodPredictions);
+    
     if (predictions.length === 0) {
       return <p className="text-gray-500">该位置暂无有效拟合结果</p>;
     }
     
     return (
-      <div className="space-y-4">
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="text-sm mb-2">
+      <div className="space-y-2">
+        <div className="bg-gray-50 p-2 rounded-lg">
+          <div className="text-xs mb-1">
             <span className="text-gray-600">亮度值:</span>
             <span className="ml-2 font-medium">{rawValue.toFixed(2)}</span>
           </div>
         </div>
         
-        <div className="space-y-3">
-          <h6 className="font-medium text-gray-700">所有拟合方法预测结果:</h6>
-          {predictions.map(([method, prediction]) => (
-            <div key={method} className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-medium text-gray-700">
-                  {getTypeLabel(method)}
-                </span>
-                <span className="text-lg font-bold text-blue-600">
-                  {prediction.predictedGrayScale.toFixed(6)}
-                </span>
+        <div className="space-y-2">
+          <h6 className="text-sm font-medium text-gray-700">所有拟合方法预测结果:</h6>
+          {predictions.map(([method, prediction]) => {
+            const pred = prediction as {
+              predictedGrayScale: number;
+              formula: string;
+              confidence: number;
+              fittingType: string;
+            };
+            return (
+              <div key={method} className="bg-blue-50 p-2 rounded-lg border border-blue-200">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-medium text-gray-700">
+                    {getTypeLabel(method)}
+                  </span>
+                  <span className="text-sm font-bold text-blue-600">
+                    {pred.predictedGrayScale.toFixed(6)}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600 mb-1">
+                  置信度(R²): <span className="font-medium">{(pred.confidence * 100).toFixed(2)}%</span>
+                </div>
+                <div className="text-xs text-gray-500 font-mono bg-white p-1 rounded border">
+                  {pred.formula}
+                </div>
               </div>
-              <div className="text-sm text-gray-600 mb-2">
-                置信度(R²): <span className="font-medium">{(prediction.confidence * 100).toFixed(2)}%</span>
-              </div>
-              <div className="text-sm text-gray-500 font-mono bg-white p-2 rounded border">
-                {prediction.formula}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
-  }, [doubleClickedCell, rawData, grayScaleData.values, brightnessBlocks]);
+  }, [doubleClickedCell, cachedPredictionResults, localGrayScaleData, localBrightnessBlocks, grayScaleData, brightnessBlocks, rawData, getTypeLabel]);
 
   // 生成预测结果
   const generatePredictions = useCallback(async () => {
@@ -282,7 +310,11 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
       return;
     }
 
-    if (!grayScaleData.values.length || !brightnessBlocks.length) {
+    // 使用本地数据（如果有）或传入的props数据
+    const currentGrayScaleData = localGrayScaleData || grayScaleData;
+    const currentBrightnessBlocks = localBrightnessBlocks || brightnessBlocks;
+
+    if (!currentGrayScaleData.values.length || !currentBrightnessBlocks.length) {
       setError('无法获取有效的拟合数据');
       return;
     }
@@ -297,8 +329,8 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // 提取中心像素值和灰阶值
-      const centerPixelValues = brightnessBlocks.map(block => block.centerPixelValue);
-      const grayScaleValues = grayScaleData.values;
+      const centerPixelValues = currentBrightnessBlocks.map(block => block.centerPixelValue);
+      const grayScaleValues = currentGrayScaleData.values;
 
       if (centerPixelValues.length !== grayScaleValues.length) {
         setError('拟合数据长度不匹配');
@@ -313,6 +345,8 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
         x: centerPixelValues,
         y: grayScaleValues
       });
+
+      // 拟合结果已获取，继续处理预测
 
       // 步骤3: 找到最佳拟合结果 (50%)
       setGenerationProgress(50);
@@ -337,6 +371,7 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
 
       const totalValues = rawData.values.length;
       const predictions: PredictionResult[] = [];
+      const predictionCache: CachedPredictionResult[] = [];
 
       for (let index = 0; index < totalValues; index++) {
         const rawValue = rawData.values[index];
@@ -396,6 +431,12 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
           predictions: methodPredictions
         });
 
+        // 缓存该位置的预测结果供双击功能使用
+        predictionCache.push({
+          rawValue,
+          methodPredictions
+        });
+
         // 更新进度 (80% - 95%)
         const progress = 80 + Math.floor((index / totalValues) * 15);
         setGenerationProgress(progress);
@@ -405,6 +446,9 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
           await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
+
+      // 缓存预测结果
+      setCachedPredictionResults(predictionCache);
 
       // 步骤5: 完成 (100%)
       setGenerationProgress(100);
@@ -419,7 +463,7 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
       setIsGenerating(false);
       setGenerationProgress(0);
     }
-  }, [rawData, grayScaleData, brightnessBlocks]);
+  }, [rawData, grayScaleData, brightnessBlocks, localGrayScaleData, localBrightnessBlocks, getTypeLabel]);
 
   // 导出预测结果到Excel
   const exportToExcel = useCallback(() => {
@@ -539,18 +583,6 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
     XLSX.writeFile(workbook, fileName);
   }, [predictionResults, bestFittingResult, rawData]);
 
-  // 获取拟合类型标签
-  const getTypeLabel = (type: string) => {
-    const labels: { [key: string]: string } = {
-      'logarithmic': '对数拟合',
-      'exponential': '指数拟合',
-      'polynomial': '三次多项式拟合',
-      'power': '幂函数拟合',
-      'bivariate': '二次多项式拟合'
-    };
-    return labels[type] || type;
-  };
-
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
       <h3 className="text-lg font-semibold mb-6">原始数据预测</h3>
@@ -635,7 +667,7 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
       )}
 
       {/* 生成预测按钮 */}
-      {rawData && grayScaleData.values.length > 0 && brightnessBlocks.length > 0 && (
+      {rawData && ((localGrayScaleData && localBrightnessBlocks) || (grayScaleData.values.length > 0 && brightnessBlocks.length > 0)) && (
         <div className="mb-6">
           <button
             onClick={generatePredictions}
@@ -671,64 +703,133 @@ const TargetDataPrediction: React.FC<TargetDataPredictionProps> = ({ grayScaleDa
       {rawData && (
         <div className="mb-6">
           <h4 className="font-medium mb-3">原始数据热力图</h4>
+          <p className="text-sm text-gray-600 mb-2">
+            双击任意像素位置查看该位置的拟合结果
+          </p>
+          
+          {/* SVG热力图 */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200 overflow-x-auto">
+            <div className="inline-block">
+              <svg
+                 width={`${(rawData.matrix[0]?.length || 32) * 24 + 60}`}
+                 height={`${rawData.matrix.length * 24 + 60}`}
+                 className="bg-white"
+               >
+                {/* 列标识 (顶部) */}
+                {rawData.matrix[0] && Array.from({ length: rawData.matrix[0].length }, (_, colIndex) => (
+                  <text
+                    key={`col-label-${colIndex}`}
+                    x={30 + colIndex * 24 + 12}
+                    y={15}
+                    textAnchor="middle"
+                    className="text-xs fill-gray-600 font-mono"
+                  >
+                    {numToCol(colIndex + 1)}
+                  </text>
+                ))}
+                
+                {/* 行标识 (左侧) */}
+                {Array.from({ length: rawData.matrix.length }, (_, rowIndex) => (
+                  <text
+                    key={`row-label-${rowIndex}`}
+                    x={15}
+                    y={30 + rowIndex * 24 + 16}
+                    textAnchor="middle"
+                    className="text-xs fill-gray-600 font-mono"
+                  >
+                    {rowIndex + 2}
+                  </text>
+                ))}
+                
+                {/* 坐标轴标签 */}
+                 <text
+                   x={30 + (rawData.matrix[0]?.length || 32) * 24 / 2}
+                   y={rawData.matrix.length * 24 + 50}
+                   textAnchor="middle"
+                   className="text-sm font-semibold fill-gray-700"
+                 >
+                   列索引
+                 </text>
+                 <text
+                   x={-5}
+                   y={30 + rawData.matrix.length * 24 / 2}
+                   textAnchor="middle"
+                   className="text-sm font-semibold fill-gray-700"
+                   transform={`rotate(-90, -5, ${30 + rawData.matrix.length * 24 / 2})`}
+                 >
+                   行索引
+                 </text>
+                 
+                 {/* 热力图数据 */}
+                 {rawData.matrix.map((row, rowIndex) => {
+                   return row.map((value, colIndex) => {
+                    const backgroundColor = getColor(value);
+                    
+                    // 根据背景色调整文字颜色
+                    const minValue = Math.min(...rawData.matrix.flat());
+                    const maxValue = Math.max(...rawData.matrix.flat());
+                    const normalizedValue = (value - minValue) / (maxValue - minValue);
+                    const textColor = normalizedValue > 0.5 ? 'white' : 'black';
+                    
+                    return (
+                      <g key={`${rowIndex}-${colIndex}`}>
+                        <rect
+                          x={30 + colIndex * 24}
+                          y={30 + rowIndex * 24}
+                          width="24"
+                          height="24"
+                          fill={backgroundColor}
+                          stroke="#e5e7eb"
+                          strokeWidth="0.5"
+                          className="cursor-pointer hover:stroke-2 hover:stroke-blue-500"
+                          onDoubleClick={() => handleDoubleClick(rowIndex, colIndex)}
+                        />
+                        <text
+                          x={30 + colIndex * 24 + 12}
+                          y={30 + rowIndex * 24 + 16}
+                          textAnchor="middle"
+                          className="text-xs font-medium pointer-events-none"
+                          fill={textColor}
+                        >
+                          {value.toFixed(1)}
+                        </text>
+                        <title>{`位置: ${numToCol(colIndex + 1)}${rowIndex + 2}, 值: ${value.toFixed(2)}`}</title>
+                      </g>
+                    );
+                  });
+                })}
+                
+
+              </svg>
+            </div>
+          </div>
           
           {/* 颜色图例 */}
-          <div className="mb-3 flex items-center gap-4">
-            <span className="text-sm text-gray-600">颜色图例:</span>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-blue-900 border border-gray-300"></div>
-              <span className="text-xs text-gray-600">高值</span>
-              <div className="w-20 h-4 bg-gradient-to-r from-blue-900 via-blue-400 to-blue-100 border border-gray-300"></div>
-              <div className="w-4 h-4 bg-blue-100 border border-gray-300"></div>
-              <span className="text-xs text-gray-600">低值</span>
-            </div>
-            <div className="text-xs text-gray-500">
-              范围: {Math.min(...rawData.matrix.flat()).toFixed(2)} - {Math.max(...rawData.matrix.flat()).toFixed(2)}
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg border border-gray-200 overflow-x-auto">
-            <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${rawData.matrix[0]?.length || 32}, minmax(24px, 1fr))` }}>
-              {rawData.matrix.map((row, rowIndex) =>
-                row.map((value, colIndex) => {
-                  const minValue = Math.min(...rawData.matrix.flat());
-                  const maxValue = Math.max(...rawData.matrix.flat());
-                  const normalizedValue = (value - minValue) / (maxValue - minValue);
-                  
-                  // 使用蓝色渐变色彩映射
-                  const blueIntensity = Math.round(normalizedValue * 200 + 55); // 55-255范围
-                  const backgroundColor = `rgb(${255 - blueIntensity}, ${255 - blueIntensity}, 255)`;
-                  
-                  // 根据背景色调整文字颜色
-                  const textColor = normalizedValue > 0.5 ? 'white' : 'black';
-                  
-                  return (
-                    <div
-                      key={`${rowIndex}-${colIndex}`}
-                      className="aspect-square border border-gray-200 cursor-pointer hover:border-blue-600 hover:border-2 transition-all duration-200 flex items-center justify-center text-xs font-medium hover:shadow-md"
-                      style={{ backgroundColor, color: textColor }}
-
-                      onDoubleClick={() => handleDoubleClick(rowIndex, colIndex)}
-                      title={`位置: ${numToCol(colIndex + 1)}${rowIndex + 2}, 值: ${value.toFixed(2)}`}
-                    >
-                      {value.toFixed(1)}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+           <div className="mt-4 flex items-center gap-4">
+             <span className="text-sm text-gray-600">数值范围:</span>
+             <div className="flex items-center gap-2">
+               <div className="w-4 h-4" style={{ backgroundColor: getColor(Math.min(...rawData.matrix.flat())) }}></div>
+               <span className="text-xs">{Math.min(...rawData.matrix.flat()).toFixed(2)}</span>
+               <div className="w-20 h-4 bg-gradient-to-r" 
+                    style={{ 
+                      backgroundImage: `linear-gradient(to right, ${getColor(Math.min(...rawData.matrix.flat()))}, ${getColor(Math.max(...rawData.matrix.flat()))})` 
+                    }}>
+               </div>
+               <span className="text-xs">{Math.max(...rawData.matrix.flat()).toFixed(2)}</span>
+               <div className="w-4 h-4" style={{ backgroundColor: getColor(Math.max(...rawData.matrix.flat())) }}></div>
+             </div>
+           </div>
 
           
           {/* 双击拟合结果卡片 */}
           {doubleClickedCell && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleCloseDoubleClickCard}>
-              <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-4">
-                  <h5 className="text-lg font-semibold">位置 {numToCol(doubleClickedCell.col + 1)}{doubleClickedCell.row + 2} 详细拟合结果</h5>
+              <div className="bg-white rounded-lg p-4 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-3">
+                  <h5 className="text-base font-semibold">位置 {numToCol(doubleClickedCell.col + 1)}{doubleClickedCell.row + 2} 详细拟合结果</h5>
                   <button
                     onClick={handleCloseDoubleClickCard}
-                    className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none"
+                    className="text-gray-500 hover:text-gray-700 text-xl font-bold leading-none"
                     aria-label="关闭"
                   >
                     ×
